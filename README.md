@@ -26,6 +26,7 @@ The `gradio` package is optional in that it is only needed for the web applicati
 ```
 pip install colorama
 pip install gradio
+pip install termcolor
 ```
 
 ## CLI usage
