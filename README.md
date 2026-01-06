@@ -24,9 +24,7 @@ export CLAUDE_VERTEX_API_KEY=myapikey
 
 The `gradio` package is optional in that it is only needed for the web application.
 ```
-pip install colorama
-pip install gradio
-pip install termcolor
+pip install requests colorama termcolor gradio
 ```
 
 ## CLI usage
