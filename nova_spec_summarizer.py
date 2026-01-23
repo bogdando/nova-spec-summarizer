@@ -116,18 +116,17 @@ def summarize_current_changes(change_id, verbose=None):
         filename, content = get_gerrit_file_content(change_id, revision_id=revision_id, verbose=verbose)
         revisions.append(str(content))
 
-    revisions_str = '\n\n'.join(revisions)
-    prompt = f"""
+    prompt = """
 Here are the patchsets of the spec in chronological order:
 
-{revisions_str}
+{}
 
 Please provide:
 1. A summary of what changed in each patchset
 2. What new sections or requirements were added
 3. What was removed or modified
 4. Any significant shifts in approach or design decisions
-"""
+""".format('\n\n'.join(revisions))
 
     return query_model(prompt)
 
@@ -145,22 +144,21 @@ def summarize_history(change_id, verbose=None):
             print('... Found past approval from the ' + colored(f'{release}', 'green') + ' release')
             revisions.append(r.text)
 
-    past_revisions_str = '\n\n'.join(revisions[1:])
-    prompt = f"""
+    prompt = """
 Here's the current proposal of a design spec:
 
-{revisions[0]}
+{}
 
 And here are the approvals of the spec from previous releases, in reverse chronological order:
 
-{past_revisions_str}
+{}
 
 Please provide:
 1. A summary of what changed in each proposal
 2. What new sections or requirements were added
 3. What was removed or modified
 4. Any significant shifts in approach or design decisions
-"""
+""".format(revisions[0], '\n\n'.join(revisions[1:]))
 
     return query_model(prompt)
 
