@@ -41,7 +41,32 @@ def query_model(prompt):
     print('... Calling the LLM at ' + colored(f'{url}', 'green') + ' -- this will take several seconds')
 
     r = requests.post(url, headers=headers, data=json.dumps(payload))
-    results = r.json()['content']
+    
+    if r.status_code != 200:
+        print(colored(f'Error: API returned status {r.status_code}', 'red'))
+        print(f'Response: {r.text[:500]}')
+        raise RuntimeError(f'LLM API request failed with status {r.status_code}')
+    
+    response_json = r.json()
+    
+    # Handle error responses
+    if isinstance(response_json, list):
+        # Vertex AI sometimes returns errors as a list
+        print(colored('Error: Unexpected list response from API', 'red'))
+        print(f'Response: {response_json}')
+        raise RuntimeError(f'LLM API returned unexpected response format: {response_json}')
+    
+    if 'error' in response_json:
+        print(colored(f'Error from API: {response_json["error"]}', 'red'))
+        raise RuntimeError(f'LLM API error: {response_json["error"]}')
+    
+    if 'content' not in response_json:
+        print(colored('Error: No content in API response', 'red'))
+        print(f'Response keys: {response_json.keys() if isinstance(response_json, dict) else "N/A"}')
+        print(f'Full response: {str(response_json)[:500]}')
+        raise RuntimeError('LLM API response missing content field')
+    
+    results = response_json['content']
     print('... Received ' + colored(f'{len(results)}', 'green') + ' results from the LLM')
 
     for result in results:
