@@ -50,6 +50,28 @@ def query_model(prompt):
     return results[0]['text']
 
 
+def parse_gerrit_response(response, verbose=None):
+    """Parse Gerrit API response, handling the XSSI prevention prefix."""
+    if response.status_code != 200:
+        raise RuntimeError(
+            f'Gerrit API returned status {response.status_code}: {response.text[:200]}')
+    
+    text = response.text
+    # Gerrit prepends ")]}'" to prevent XSSI attacks
+    if text.startswith(")]}'"):
+        text = text[4:]
+    
+    if not text.strip():
+        raise RuntimeError('Gerrit API returned empty response')
+    
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        if verbose:
+            print(f'... Response text: {response.text[:200]}')
+        raise RuntimeError(f'Failed to parse Gerrit response: {e}')
+
+
 def get_gerrit_file_content(change_id, revision_id='current', verbose=None):
     http_user = os.environ.get('GERRIT_USER')
     http_password = os.environ.get('GERRIT_HTTP_PASS')
@@ -59,7 +81,7 @@ def get_gerrit_file_content(change_id, revision_id='current', verbose=None):
         print('... Calling Gerrit at ' + colored(f'{url}', 'green'))
 
     r = requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
-    resp = json.loads(r.text[4:])
+    resp = parse_gerrit_response(r, verbose=verbose)
     resp.pop('/COMMIT_MSG')
     if len(resp) > 1:
         raise ValueError('Found more than one .rst file for the spec')
@@ -84,7 +106,7 @@ def summarize_current_conversation(change_id, verbose=None):
     if verbose:
         print('... Calling Gerrit at ' + colored(f'{url}', 'green'))
     r = requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
-    resp = json.loads(r.text[4:])
+    resp = parse_gerrit_response(r, verbose=verbose)
 
     prompt = f"""
 Here are the revisions of the spec in chronological order:
@@ -106,7 +128,7 @@ def summarize_current_changes(change_id, verbose=None):
     if verbose:
         print('... Calling Gerrit at ' + colored(f'{url}', 'green'))
     r = requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
-    resp = json.loads(r.text[4:])
+    resp = parse_gerrit_response(r, verbose=verbose)
 
     revisions = []
     revision_infos = resp['revisions']
