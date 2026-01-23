@@ -202,6 +202,7 @@ def summarize_history(change_id, verbose=None, specs_repo='openstack/nova-specs'
     filename, content = get_gerrit_file_content(change_id, verbose=verbose)
     revisions = [content]
     for release in PAST_RELEASES:
+        # Check for approved specs
         url = f'https://raw.githubusercontent.com/{specs_repo}/master/specs/{release}/approved/{filename}'
         if verbose:
             print('... Checking for past approval at ' + colored(f'{url}', 'yellow'))
@@ -209,6 +210,17 @@ def summarize_history(change_id, verbose=None, specs_repo='openstack/nova-specs'
         r = requests.get(url, verify=CERT_PATH)
         if r.status_code != 404:
             print('... Found past approval from the ' + colored(f'{release}', 'green') + ' release')
+            revisions.append(r.text)
+            continue
+
+        # Check for implemented specs
+        url = f'https://raw.githubusercontent.com/{specs_repo}/master/specs/{release}/implemented/{filename}'
+        if verbose:
+            print('... Checking for past implementation at ' + colored(f'{url}', 'yellow'))
+
+        r = requests.get(url, verify=CERT_PATH)
+        if r.status_code != 404:
+            print('... Found past implementation from the ' + colored(f'{release}', 'green') + ' release')
             revisions.append(r.text)
 
     prompt = """
