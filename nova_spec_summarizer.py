@@ -198,11 +198,11 @@ Please provide:
     return query_model(prompt)
 
 
-def summarize_history(change_id, verbose=None):
+def summarize_history(change_id, verbose=None, specs_repo='openstack/nova-specs'):
     filename, content = get_gerrit_file_content(change_id, verbose=verbose)
     revisions = [content]
     for release in PAST_RELEASES:
-        url = f'https://raw.githubusercontent.com/openstack/nova-specs/master/specs/{release}/approved/{filename}'
+        url = f'https://raw.githubusercontent.com/{specs_repo}/master/specs/{release}/approved/{filename}'
         if verbose:
             print('... Checking for past approval at ' + colored(f'{url}', 'yellow'))
 
@@ -239,6 +239,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output.')
     parser.add_argument('--url', help='URL for the spec proposed in Gerrit.')
+    parser.add_argument('--specs-repo', default='openstack/nova-specs',
+                        help='GitHub repository for specs (default: openstack/nova-specs).')
     args = parser.parse_args()
 
     # use Colorama to make Termcolor work on Windows too
@@ -252,7 +254,7 @@ def main():
         print('... The change-id is ' + colored(f'{change_id}', 'yellow'))
 
     print(colored('Summarizing the current proposal and past approvals', 'yellow'))
-    summarize_history(change_id, verbose=args.verbose)
+    summarize_history(change_id, verbose=args.verbose, specs_repo=args.specs_repo)
 
     print(colored('Summarizing changes in each patchset of the current proposal', 'yellow'))
     summarize_current_changes(change_id, verbose=args.verbose)
