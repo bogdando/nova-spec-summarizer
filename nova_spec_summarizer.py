@@ -18,7 +18,7 @@ PAST_RELEASES = [
     'xena', 'wallaby', 'victoria', 'ussuri', 'train']
 
 def query_model(prompt):
-    user_key = os.environ.get('CLAUDE_VERTEX_API_KEY')
+    user_key = os.environ.get('VERTEX_API_KEY')
 
     headers = {
         'Content-Type': 'application/json',
@@ -26,53 +26,73 @@ def query_model(prompt):
     }
 
     payload = {
-        'anthropic_version': 'vertex-2023-10-16',
-        'messages': [
-            {
-                'role': 'user',
-                'content': [{'type': 'text', 'text': f'{prompt}'}]
-            }
-        ],
-        'max_tokens': 4096,
-        'temperature': 0.0
+        "contents": [{
+            "role": "user",
+            "parts": [{"text": prompt}]
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 8192,
+            "temperature": 0.0,
+        }
     }
 
-    url = os.environ.get('CLAUDE_VERTEX_API_URL')
+    url = os.environ.get('VERTEX_API_URL')
     print('... Calling the LLM at ' + colored(f'{url}', 'green') + ' -- this will take several seconds')
 
     r = requests.post(url, headers=headers, data=json.dumps(payload))
-    
+
     if r.status_code != 200:
         print(colored(f'Error: API returned status {r.status_code}', 'red'))
         print(f'Response: {r.text[:500]}')
         raise RuntimeError(f'LLM API request failed with status {r.status_code}')
-    
+
     response_json = r.json()
-    
-    # Handle error responses
+
+    # Handle the case where the response is a list of chunks (streaming response)
     if isinstance(response_json, list):
-        # Vertex AI sometimes returns errors as a list
-        print(colored('Error: Unexpected list response from API', 'red'))
-        print(f'Response: {response_json}')
-        raise RuntimeError(f'LLM API returned unexpected response format: {response_json}')
-    
-    if 'error' in response_json:
-        print(colored(f'Error from API: {response_json["error"]}', 'red'))
-        raise RuntimeError(f'LLM API error: {response_json["error"]}')
-    
-    if 'content' not in response_json:
-        print(colored('Error: No content in API response', 'red'))
-        print(f'Response keys: {response_json.keys() if isinstance(response_json, dict) else "N/A"}')
-        print(f'Full response: {str(response_json)[:500]}')
-        raise RuntimeError('LLM API response missing content field')
-    
-    results = response_json['content']
-    print('... Received ' + colored(f'{len(results)}', 'green') + ' results from the LLM')
+        if not response_json:
+            raise RuntimeError('LLM API returned an empty list response')
 
-    for result in results:
-        print(f'\n{result["text"]}\n')
+        # Check for error in the first chunk
+        if 'error' in response_json[0]:
+            print(colored(f'Error from API: {response_json[0]["error"]}', 'red'))
+            raise RuntimeError(f'LLM API error: {response_json[0]["error"]}')
 
-    return results[0]['text']
+        all_text_parts = []
+        for chunk in response_json:
+            try:
+                # We expect the text to be in candidates -> content -> parts -> text
+                text_part = chunk['candidates'][0]['content']['parts'][0]['text']
+                all_text_parts.append(text_part)
+            except (KeyError, IndexError):
+                # This might happen if a chunk is malformed or doesn't contain text
+                print(colored(f'Warning: Could not parse a chunk of the streaming response: {chunk}', 'yellow'))
+                continue
+        
+        result_text = "".join(all_text_parts)
+
+    # Handle the case where the response is a single JSON object (non-streaming)
+    elif isinstance(response_json, dict):
+        if 'error' in response_json:
+            print(colored(f'Error from API: {response_json["error"]}', 'red'))
+            raise RuntimeError(f'LLM API error: {response_json["error"]}')
+
+        if 'candidates' not in response_json or not response_json.get('candidates'):
+            print(colored('Error: No candidates in API response', 'red'))
+            print(f'Response keys: {response_json.keys()}')
+            print(f'Full response: {str(response_json)[:500]}')
+            raise RuntimeError('LLM API response missing candidates field')
+        
+        result_text = response_json['candidates'][0]['content']['parts'][0]['text']
+    
+    else:
+        # Handle any other unexpected format
+        raise RuntimeError(f'LLM API returned unexpected response format: {type(response_json)}')
+
+
+    print('... Received result from the LLM')
+    print(f'\n{result_text}\n')
+    return result_text
 
 
 def parse_gerrit_response(response, verbose=None):
@@ -211,7 +231,7 @@ Please provide:
 
 
 def main():
-    required_vars = ('GERRIT_USER', 'GERRIT_HTTP_PASS', 'CLAUDE_VERTEX_API_URL', 'CLAUDE_VERTEX_API_KEY')
+    required_vars = ('GERRIT_USER', 'GERRIT_HTTP_PASS', 'VERTEX_API_URL', 'VERTEX_API_KEY')
     if not all([env_var in os.environ for env_var in required_vars]):
         print(f'The following environment variables are required to be set: {", ".join(required_vars)}')
         return 1
