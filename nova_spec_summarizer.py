@@ -198,6 +198,72 @@ Please provide:
     return query_model(prompt)
 
 
+def analyze_cross_reference(change_id, cross_ref_change_id, verbose=None):
+    """Fetch both specs and analyze cross-project alignment."""
+    main_filename, main_content = get_gerrit_file_content(
+        change_id, verbose=verbose)
+    cross_filename, cross_content = get_gerrit_file_content(
+        cross_ref_change_id, verbose=verbose)
+
+    prompt = f"""
+You are an OpenStack cross-project spec analyst. You are given two design specs
+from different but related OpenStack projects (e.g. Nova and Cyborg, Nova and
+Neutron, Nova and Cinder, etc.). These specs describe complementary sides of a
+cross-project feature: one spec covers the "initiating" side and the other
+covers the "receiving" or "implementing" side.
+
+=== MAIN SPEC ({main_filename}) ===
+{main_content}
+
+=== CROSS-REFERENCE SPEC ({cross_filename}) ===
+{cross_content}
+
+Analyze these two specs as a pair of cross-project design documents and provide:
+
+1. **Project Identification**: Identify which OpenStack projects each spec
+   belongs to, and which project is the "driving" side vs. the "supporting"
+   side of the feature.
+
+2. **Cross-Project Alignment**: How well do the two specs align on the overall
+   feature design? Summarize the shared goals and the division of
+   responsibilities between the two projects.
+
+3. **API & Interface Contracts**: Do the specs agree on the APIs, REST
+   endpoints, RPC calls, or data formats that cross the project boundary? Flag
+   any mismatches in request/response schemas, versioning expectations, or
+   capability negotiation.
+
+4. **Workflow & Lifecycle Consistency**: Trace the end-to-end workflow across
+   both specs. Are the state machines, lifecycle hooks, and ordering of
+   operations consistent? Identify any gaps where one spec assumes a step that
+   the other does not describe.
+
+5. **Conflicting Design Requirements**: Identify any requirements, constraints,
+   or design decisions in one spec that directly contradict or are incompatible
+   with the other. This includes conflicting assumptions about data ownership,
+   scheduling, resource management, or upgrade/migration strategies.
+
+6. **Missing or Unconnected Design Connections**: Identify design elements in
+   one spec that reference or depend on the other project but have no
+   corresponding section in the counterpart spec. These are "dangling
+   references" — features, callbacks, notifications, or configuration options
+   that one side expects but the other side does not address.
+
+7. **Error Handling & Failure Modes**: Do both specs handle cross-project
+   failure scenarios consistently? What happens if the "other side" is
+   unavailable, returns errors, or behaves unexpectedly?
+
+8. **Upgrade & Compatibility**: Are the specs aligned on how the cross-project
+   feature behaves during rolling upgrades, when one project is upgraded before
+   the other?
+
+9. **Recommendations**: Provide concrete suggestions for improving alignment
+   between the two specs, closing design gaps, and resolving contradictions.
+"""
+
+    return query_model(prompt)
+
+
 def summarize_history(change_id, verbose=None, specs_repo='openstack/nova-specs'):
     filename, content = get_gerrit_file_content(change_id, verbose=verbose)
     revisions = [content]
@@ -253,6 +319,9 @@ def main():
     parser.add_argument('--url', help='URL for the spec proposed in Gerrit.')
     parser.add_argument('--specs-repo', default='openstack/nova-specs',
                         help='GitHub repository for specs (default: openstack/nova-specs).')
+    parser.add_argument('--cross-ref',
+                        help='URL for a related cross-project spec in Gerrit '
+                             '(e.g. a Cyborg spec that complements a Nova spec).')
     args = parser.parse_args()
 
     # use Colorama to make Termcolor work on Windows too
@@ -273,6 +342,16 @@ def main():
 
     print(colored('Summarizing conversation in the current proposal', 'yellow'))
     summarize_current_conversation(change_id, verbose=args.verbose)
+
+    if args.cross_ref:
+        cross_ref_url = args.cross_ref
+        print('... Processing cross-reference spec at ' + colored(f'{cross_ref_url}', 'green'))
+        cross_ref_change_id = cross_ref_url.split('/')[-1]
+        if args.verbose:
+            print('... The cross-ref change-id is ' + colored(f'{cross_ref_change_id}', 'yellow'))
+
+        print(colored('Analyzing cross-project spec alignment', 'yellow'))
+        analyze_cross_reference(change_id, cross_ref_change_id, verbose=args.verbose)
 
 
 if __name__ == "__main__":
