@@ -14,8 +14,11 @@ from termcolor import colored
 CERT_PATH = os.environ.get('CERT_PATH') or '/etc/ssl/certs/ca-certificates.crt'
 
 PAST_RELEASES = [
-    '2025.2', '2025.1', '2024.2', '2024.1', '2023.2', '2023.1', 'zed', 'yoga',
-    'xena', 'wallaby', 'victoria', 'ussuri', 'train']
+    '2026.1', '2026.2',
+    '2025.2', '2025.1', '2024.2', '2024.1', '2023.2', '2023.1',
+    'gazpacho', 'flamingo', 'epoxy', 'dalmatian', 'caracal', 'bobcat',
+    'antelope', 'zed', 'yoga', 'xena', 'wallaby', 'victoria', 'ussuri',
+    'train']
 
 def query_model(prompt):
     user_key = os.environ.get('VERTEX_API_KEY')
