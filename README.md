@@ -1,6 +1,8 @@
 # Nova Spec Summarizer
 
-The Nova Spec Summarizer is a command line tool that uses Claude AI to generate 3 summaries given a `openstack/nova-specs` patch proposal Gerrit URL:
+The Nova Spec Summarizer is a command line tool that uses an LLM behind a
+[litellm](https://docs.litellm.ai/) proxy (OpenAI-compatible API) to generate
+3 summaries given a `openstack/nova-specs` patch proposal Gerrit URL:
 
 1. A summary of the current proposal compared with versions that were approved in previous release cycles
 2. A summary of changes in each patchset of the current proposal
@@ -8,17 +10,39 @@ The Nova Spec Summarizer is a command line tool that uses Claude AI to generate 
 
 ## Prerequisites
 
-Access to a Claude model hosted on Vertex AI is required.
+Access to a [litellm](https://docs.litellm.ai/) proxy is required, serving at
+least one model. For example, the GLM 5.3 model
+(`rits/zai-org/glm-5-3`) can be served by adding to
+`~/.config/litellm/config.yaml`:
+
+```yaml
+model_list:
+  - model_name: rits/zai-org/glm-5-3
+    litellm_params:
+      custom_llm_provider: openai
+      model: openai/rits/zai-org/glm-5-3
+      api_key: os.environ/APIKEY
+      base_url: https://api.example.net/v1
+```
+
+and starting the proxy with `litellm --port 4000 --config ~/.config/litellm/config.yaml`.
 
 ### Environment variables
 
-Just an example:
+Just an example (the API key can be the dummy `sk-litellm-proxy` when the
+local proxy requires no master key; the real ENMaaS key stays in the litellm
+config on the host):
 ```
 export GERRIT_USER=myuser
 export GERRIT_HTTP_PASS=mypassword
-export CLAUDE_VERTEX_API_URL=https://$ENDPOINT/v1/projects/$PROJECT_ID/locations/$LOCATION/publishers/anthropic/models/$MODEL:streamRawPredict
-export CLAUDE_VERTEX_API_KEY=myapikey
+export LITELLM_URL=http://localhost:4000
+export LITELLM_API_KEY=sk-litellm-proxy
+export LITELLM_MODEL=rits/zai-org/glm-5-3
 ```
+
+When `LITELLM_URL` / `LITELLM_API_KEY` are not set, the script falls back to
+the `OPENAI_BASE_URL` / `OPENAI_HOST` / `OPENAI_API_KEY` variables for
+litellm proxy gateway, so it works inside that sandbox without extra exports.
 
 ### Python packages
 

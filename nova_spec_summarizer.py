@@ -21,25 +21,33 @@ PAST_RELEASES = [
     'train']
 
 def query_model(prompt):
-    user_key = os.environ.get('VERTEX_API_KEY')
+    # Explicit LITELLM_* vars win; fall back to the OPENAI_* vars that
+    # run.sh sets inside the rhoso-aid container when the litellm proxy
+    # gateway (LITELLM_URL) is enabled.
+    api_key = (os.environ.get('LITELLM_API_KEY')
+               or os.environ.get('OPENAI_API_KEY'))
+    model = os.environ.get('LITELLM_MODEL') or 'rits/zai-org/glm-5-3'
 
     headers = {
         'Content-Type': 'application/json',
-        'Authorization': f'Bearer {user_key}',
+        'Authorization': f'Bearer {api_key}',
     }
 
     payload = {
-        "contents": [{
-            "role": "user",
-            "parts": [{"text": prompt}]
-        }],
-        "generationConfig": {
-            "maxOutputTokens": 8192,
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 15000,
             "temperature": 0.0,
         }
-    }
 
-    url = os.environ.get('VERTEX_API_URL')
+    # The litellm proxy serves an OpenAI-compatible API, e.g.
+    # LITELLM_URL=http://localhost:4000 -> .../v1/chat/completions
+    base_url = (os.environ.get('LITELLM_URL')
+                or os.environ.get('OPENAI_BASE_URL')
+                or os.environ.get('OPENAI_HOST')).rstrip('/')
+    if not base_url.endswith('/v1'):
+        base_url += '/v1'
+    url = f'{base_url}/chat/completions'
     print('... Calling the LLM at ' + colored(f'{url}', 'green') + ' -- this will take several seconds')
 
     r = requests.post(url, headers=headers, data=json.dumps(payload))
@@ -51,47 +59,28 @@ def query_model(prompt):
 
     response_json = r.json()
 
-    # Handle the case where the response is a list of chunks (streaming response)
-    if isinstance(response_json, list):
-        if not response_json:
-            raise RuntimeError('LLM API returned an empty list response')
-
-        # Check for error in the first chunk
-        if 'error' in response_json[0]:
-            print(colored(f'Error from API: {response_json[0]["error"]}', 'red'))
-            raise RuntimeError(f'LLM API error: {response_json[0]["error"]}')
-
-        all_text_parts = []
-        for chunk in response_json:
-            try:
-                # We expect the text to be in candidates -> content -> parts -> text
-                text_part = chunk['candidates'][0]['content']['parts'][0]['text']
-                all_text_parts.append(text_part)
-            except (KeyError, IndexError):
-                # This might happen if a chunk is malformed or doesn't contain text
-                print(colored(f'Warning: Could not parse a chunk of the streaming response: {chunk}', 'yellow'))
-                continue
-        
-        result_text = "".join(all_text_parts)
-
-    # Handle the case where the response is a single JSON object (non-streaming)
-    elif isinstance(response_json, dict):
-        if 'error' in response_json:
-            print(colored(f'Error from API: {response_json["error"]}', 'red'))
-            raise RuntimeError(f'LLM API error: {response_json["error"]}')
-
-        if 'candidates' not in response_json or not response_json.get('candidates'):
-            print(colored('Error: No candidates in API response', 'red'))
-            print(f'Response keys: {response_json.keys()}')
-            print(f'Full response: {str(response_json)[:500]}')
-            raise RuntimeError('LLM API response missing candidates field')
-        
-        result_text = response_json['candidates'][0]['content']['parts'][0]['text']
-    
-    else:
+    if not isinstance(response_json, dict):
         # Handle any other unexpected format
         raise RuntimeError(f'LLM API returned unexpected response format: {type(response_json)}')
 
+    if 'error' in response_json:
+        print(colored(f'Error from API: {response_json["error"]}', 'red'))
+        raise RuntimeError(f'LLM API error: {response_json["error"]}')
+
+    choices = response_json.get('choices')
+    if not choices:
+        print(colored('Error: No choices in API response', 'red'))
+        print(f'Response keys: {response_json.keys()}')
+        print(f'Full response: {str(response_json)[:500]}')
+        raise RuntimeError('LLM API response missing choices field')
+        
+    message = choices[0].get('message') or {}
+    result_text = message.get('content')
+    
+    if not result_text:
+        print(colored('Error: No content in API response message', 'red'))
+        print(f'Full response: {str(response_json)[:500]}')
+        raise RuntimeError('LLM API response message missing content')
 
     print('... Received result from the LLM')
     print(f'\n{result_text}\n')
@@ -312,9 +301,20 @@ Please provide:
 
 
 def main():
-    required_vars = ('GERRIT_USER', 'GERRIT_HTTP_PASS', 'VERTEX_API_URL', 'VERTEX_API_KEY')
+    required_vars = ('GERRIT_USER', 'GERRIT_HTTP_PASS')
     if not all([env_var in os.environ for env_var in required_vars]):
         print(f'The following environment variables are required to be set: {", ".join(required_vars)}')
+        return 1
+
+    # LLM endpoint/key: explicit LITELLM_* vars win, but the OPENAI_* vars
+    # set by the rhoso-aid container (run.sh litellm gateway) also work.
+    llm_url_vars = ('LITELLM_URL', 'OPENAI_BASE_URL', 'OPENAI_HOST')
+    llm_key_vars = ('LITELLM_API_KEY', 'OPENAI_API_KEY')
+    if not any(v in os.environ for v in llm_url_vars):
+        print(f'One of the following environment variables is required to be set: {", ".join(llm_url_vars)}')
+        return 1
+    if not any(v in os.environ for v in llm_key_vars):
+        print(f'One of the following environment variables is required to be set: {", ".join(llm_key_vars)}')
         return 1
 
     parser = argparse.ArgumentParser()
