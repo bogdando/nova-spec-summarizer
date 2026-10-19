@@ -109,15 +109,24 @@ def parse_gerrit_response(response, verbose=None):
         raise RuntimeError(f'Failed to parse Gerrit response: {e}')
 
 
-def get_gerrit_file_content(change_id, revision_id='current', verbose=None):
+def gerrit_request(url):
+    # GET a Gerrit REST URL. Uses the authenticated /a/ endpoints when
+    # Gerrit HTTP credentials are set, anonymous endpoints otherwise.
     http_user = os.environ.get('GERRIT_USER')
     http_password = os.environ.get('GERRIT_HTTP_PASS')
+    if http_user and http_password:
+        return requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
+    return requests.get(url.replace('/a/changes/', '/changes/'), verify=CERT_PATH)
+
+
+def get_gerrit_file_content(change_id, revision_id='current', verbose=None):
     url = f'https://review.opendev.org/a/changes/{change_id}/revisions/{revision_id}/files'
+
 
     if verbose:
         print('... Calling Gerrit at ' + colored(f'{url}', 'green'))
 
-    r = requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
+    r = gerrit_request(url)
     resp = parse_gerrit_response(r, verbose=verbose)
     resp.pop('/COMMIT_MSG')
     if len(resp) > 1:
@@ -130,19 +139,17 @@ def get_gerrit_file_content(change_id, revision_id='current', verbose=None):
     if verbose:
         print('... Calling Gerrit at ' + colored(f'{url}', 'green'))
 
-    r = requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
+    r = gerrit_request(url)
 
     return base_filename, base64.b64decode(r.text)
 
 
 def summarize_current_conversation(change_id, verbose=None):
-    http_user = os.environ.get('GERRIT_USER')
-    http_password = os.environ.get('GERRIT_HTTP_PASS')
     url = f'https://review.opendev.org/a/changes/{change_id}/comments?enable-context'
 
     if verbose:
         print('... Calling Gerrit at ' + colored(f'{url}', 'green'))
-    r = requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
+    r = gerrit_request(url)
     resp = parse_gerrit_response(r, verbose=verbose)
 
     prompt = f"""
@@ -158,13 +165,11 @@ Please provide a summary of the conversation among the proposal reviewers.
 
 
 def summarize_current_changes(change_id, verbose=None):
-    http_user = os.environ.get('GERRIT_USER')
-    http_password = os.environ.get('GERRIT_HTTP_PASS')
     url = f'https://review.opendev.org/a/changes/{change_id}?o=ALL_REVISIONS'
 
     if verbose:
         print('... Calling Gerrit at ' + colored(f'{url}', 'green'))
-    r = requests.get(url, auth=(http_user, http_password), verify=CERT_PATH)
+    r = gerrit_request(url)
     resp = parse_gerrit_response(r, verbose=verbose)
 
     revisions = []
@@ -301,10 +306,8 @@ Please provide:
 
 
 def main():
-    required_vars = ('GERRIT_USER', 'GERRIT_HTTP_PASS')
-    if not all([env_var in os.environ for env_var in required_vars]):
-        print(f'The following environment variables are required to be set: {", ".join(required_vars)}')
-        return 1
+    if not all([os.environ.get(v) for v in ('GERRIT_USER', 'GERRIT_HTTP_PASS')]):
+        print('... Gerrit credentials not set, querying Gerrit anonymously')
 
     # LLM endpoint/key: explicit LITELLM_* vars win, but the OPENAI_* vars
     # set by the rhoso-aid container (run.sh litellm gateway) also work.
